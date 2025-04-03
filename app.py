@@ -9,6 +9,11 @@ from sklearn.datasets import load_iris
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.tree import export_graphviz
 
+import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei'] # 优先使用微软雅黑，找不到再用 SimHei
+matplotlib.rcParams['axes.unicode_minus'] = False # 解决保存图像是负号'-'显示为方块的问题
+
 # --- Page Configuration ---
 st.set_page_config(
     page_title="决策树探秘之旅",
@@ -180,7 +185,7 @@ st.markdown("---")
 # --- 后续阶段占位符 ---
 # --- Stage 3: 决策的核心 - 如何选择“最好的”问题？ ---
 st.header("阶段 3: 决策的核心 - 如何选择“最好的”问题？")
-st.markdown("""
+st.markdown(r"""
 在阶段 1，我们凭直觉尝试分割数据。但机器如何**自动**找到“最好”的分割线呢？
 决策树通过衡量数据的“**纯度**”或“**不纯度**”来做到这一点。一个好的分割应该让分割后的两个区域都尽可能“纯”（即包含的类别尽量单一）。
 
