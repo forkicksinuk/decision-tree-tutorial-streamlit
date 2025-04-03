@@ -9,10 +9,20 @@ from sklearn.datasets import load_iris
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.tree import export_graphviz
 
-import matplotlib.pyplot as plt
-import matplotlib
-matplotlib.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei'] # 优先使用微软雅黑，找不到再用 SimHei
-matplotlib.rcParams['axes.unicode_minus'] = False # 解决保存图像是负号'-'显示为方块的问题
+import matplotlib # 导入 matplotlib
+
+# --- 设置 Matplotlib 支持中文 (适配 Streamlit Cloud) ---
+# 这是第三步需要修改的地方：
+try:
+    # 指定使用通过 packages.txt 安装的 WenQuanYi Micro Hei 字体
+    plt.rcParams['font.sans-serif'] = ['WenQuanYi Micro Hei']
+    plt.rcParams['axes.unicode_minus'] = False # 解决保存图像是负号'-'显示为方块的问题
+    print("成功设置字体为 WenQuanYi Micro Hei") # 在后台日志中打印，便于调试
+except Exception as e:
+    # 如果设置失败，发出警告
+    st.warning(f"无法设置中文字体 'WenQuanYi Micro Hei'，图表标签可能显示为方框。请确保 packages.txt 文件包含 'fonts-wqy-microhei' 并已成功安装。错误: {e}")
+    print(f"字体设置失败: {e}") # 在后台日志中打印错误
+
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -46,8 +56,8 @@ def plot_data(X, y, split_feature=None, split_value=None, ax=None, title="数据
 
     ax.set_xlabel("特征 X1")
     ax.set_ylabel("特征 X2")
-    ax.set_title(title)
-    ax.legend()
+    ax.set_title(title) # 标题会使用设置的中文字体
+    ax.legend() # 图例也会使用设置的中文字体
     ax.grid(True, linestyle='--', alpha=0.6)
 
     # 绘制分割线
@@ -109,7 +119,7 @@ with col1_2:
     fig1, ax1 = plot_data(X_simple, y_simple,
                           split_feature=selected_feature_idx,
                           split_value=split_value,
-                          title="简单数据集与你的分割尝试")
+                          title="简单数据集与你的分割尝试") # 标题是中文
     st.pyplot(fig1)
 
 st.markdown("""
@@ -132,7 +142,7 @@ st.markdown("""
 # 2.1 预设一个简单的决策树 (DOT 语言)
 # 这个树对应 X1 <= 2.5 的分割规则
 dot_simple_tree = graphviz.Digraph(comment='简单决策树示例')
-dot_simple_tree.node('0', 'X1 <= 2.61 ?\n(根节点)') # 实际分割点可能略有不同，这里用一个接近的值
+dot_simple_tree.node('0', 'X1 <= 2.61 ?\n(根节点)')
 dot_simple_tree.node('1', '预测: 红色 🔵\n(叶节点)')
 dot_simple_tree.node('2', '预测: 蓝色 🟥\n(叶节点)')
 dot_simple_tree.edge('0', '1', label='是 (True)')
@@ -171,9 +181,9 @@ with col2_2:
         final_prediction = "蓝色 🟥"
 
     # 可视化这个新点
-    fig2, ax2 = plot_data(X_simple, y_simple, title="数据点与新输入的点")
+    fig2, ax2 = plot_data(X_simple, y_simple, title="数据点与新输入的点") # 中文标题
     ax2.scatter(new_x1, new_x2, c='lime', marker='*', s=200, edgecolor='black', label=f'新点 ({new_x1:.1f}, {new_x2:.1f})\n预测: {final_prediction}')
-    ax2.legend()
+    ax2.legend() # 图例
     st.pyplot(fig2)
 
 
@@ -182,7 +192,7 @@ st.markdown("""
 """)
 st.markdown("---")
 
-# --- 后续阶段占位符 ---
+
 # --- Stage 3: 决策的核心 - 如何选择“最好的”问题？ ---
 st.header("阶段 3: 决策的核心 - 如何选择“最好的”问题？")
 st.markdown(r"""
@@ -206,8 +216,15 @@ def calculate_gini(y):
     """计算一个节点 (或数据集) 的基尼不纯度"""
     if len(y) == 0:
         return 0
-    counts = np.bincount(y) # 计算每个类别的样本数
-    proportions = counts / len(y)
+    # 使用 np.bincount 计算每个类别的样本数，确保考虑所有可能的类别（即使当前子集中没有）
+    # 假设 y 中的值是从 0 开始的整数类别标签
+    max_label = np.max(y_simple) if len(y_simple) > 0 else 0 # 获取全局最大标签值
+    counts = np.bincount(y, minlength=max_label + 1)
+    # 仅考虑实际存在的样本进行比例计算
+    valid_counts = counts[counts > 0]
+    if len(valid_counts) == 0: # 如果节点为空或只有无效标签？
+        return 0
+    proportions = valid_counts / len(y)
     gini = 1 - np.sum(proportions**2)
     return gini
 
@@ -275,13 +292,16 @@ with col3_1:
     st.markdown(f"**左侧子集 (<= {split_value_s3:.2f})**")
     st.metric(label=f"样本数: {len(y_left)}", value=f"Gini: {gini_left:.4f}")
     if len(y_left) > 0:
-        counts_left = np.bincount(y_left, minlength=2) # minlength 确保总是有两类
+        # 确保 bincount 长度至少为全局类别数
+        global_num_classes = len(np.unique(y_simple))
+        counts_left = np.bincount(y_left, minlength=global_num_classes)
         st.caption(f"红🔵: {counts_left[0]}, 蓝🟥: {counts_left[1]}")
 
     st.markdown(f"**右侧子集 (> {split_value_s3:.2f})**")
     st.metric(label=f"样本数: {len(y_right)}", value=f"Gini: {gini_right:.4f}")
     if len(y_right) > 0:
-        counts_right = np.bincount(y_right, minlength=2)
+        global_num_classes = len(np.unique(y_simple))
+        counts_right = np.bincount(y_right, minlength=global_num_classes)
         st.caption(f"红🔵: {counts_right[0]}, 蓝🟥: {counts_right[1]}")
 
     st.subheader("总体评估")
@@ -296,7 +316,7 @@ with col3_2:
     fig3, ax3 = plot_data(X_simple, y_simple,
                           split_feature=selected_feature_idx_s3,
                           split_value=split_value_s3,
-                          title=f"当前分割 (信息增益: {information_gain:.3f})")
+                          title=f"当前分割 (信息增益: {information_gain:.3f})") # 中文标题
     st.pyplot(fig3)
 
 st.markdown("""
@@ -307,7 +327,6 @@ st.markdown("""
 """)
 st.markdown("---")
 
-# --- 更新后续阶段占位符 ---
 # --- Stage 4: 递归构建 - 分而治之 ---
 st.header("阶段 4: 递归构建 - 分而治之")
 st.markdown("""
@@ -340,17 +359,19 @@ def find_best_split(X, y):
     if current_gini == 0: # 如果节点已经纯净，无需分割
          return None, None, -1
 
-    max_info_gain = -1 # 初始化为负数
+    max_info_gain = -1 # 初始化为负数，确保只有正增益才有效
     best_feature_idx = None
     best_threshold = None
 
     for feature_idx in range(n_features):
-        # 尝试所有可能的阈值：特征值排序后，相邻不同值的中点
+        # 获取该特征的所有唯一值作为潜在分割点
         thresholds = np.unique(X[:, feature_idx])
         if len(thresholds) > 1:
+            # 潜在阈值是排序后相邻不同值的中点
             potential_thresholds = (thresholds[:-1] + thresholds[1:]) / 2
         else:
-            potential_thresholds = thresholds # 只有一个值，没法分割
+            # 如果只有一个唯一值，无法基于此特征分割
+            continue # 跳过这个特征
 
         for threshold in potential_thresholds:
             # 分割数据
@@ -360,7 +381,7 @@ def find_best_split(X, y):
             y_left = y[left_indices]
             y_right = y[right_indices]
 
-            # 如果分割导致一个子集为空，则跳过这个阈值
+            # 确保分割后的子集都不为空
             if len(y_left) == 0 or len(y_right) == 0:
                 continue
 
@@ -368,14 +389,15 @@ def find_best_split(X, y):
             weighted_gini = calculate_weighted_gini(y_left, y_right)
             info_gain = current_gini - weighted_gini
 
-            # 更新最佳分割
+            # 更新最佳分割记录
             if info_gain > max_info_gain:
                 max_info_gain = info_gain
                 best_feature_idx = feature_idx
                 best_threshold = threshold
 
-    # 只有当信息增益大于0时，才认为找到了有效的分割
-    if max_info_gain > 0:
+    # 只有当最大信息增益明确大于0时，才返回有效分割
+    # （避免浮点数精度问题导致微小的负增益被选中）
+    if max_info_gain > 1e-9: # 使用一个小的阈值
         return best_feature_idx, best_threshold, max_info_gain
     else:
         return None, None, -1 # 表示找不到好的分割
@@ -397,7 +419,7 @@ if best_feature_idx_s4 is not None:
         fig4a, ax4a = plot_data(X_simple, y_simple,
                                 split_feature=best_feature_idx_s4,
                                 split_value=best_threshold_s4,
-                                title="第一个最佳分割线")
+                                title="第一个最佳分割线") # 中文标题
         st.pyplot(fig4a)
 
     with col4_1b:
@@ -413,8 +435,9 @@ if best_feature_idx_s4 is not None:
         y_right_s4 = y_simple[right_indices_s4]
         gini_left_s4 = calculate_gini(y_left_s4)
         gini_right_s4 = calculate_gini(y_right_s4)
-        pred_left = np.argmax(np.bincount(y_left_s4)) if len(y_left_s4)>0 else -1
-        pred_right = np.argmax(np.bincount(y_right_s4)) if len(y_right_s4)>0 else -1
+        # 预测类别应基于多数类
+        pred_left = np.argmax(np.bincount(y_left_s4, minlength=global_num_classes)) if len(y_left_s4)>0 else -1
+        pred_right = np.argmax(np.bincount(y_right_s4, minlength=global_num_classes)) if len(y_right_s4)>0 else -1
         class_labels = {0: "红🔵", 1: "蓝🟥", -1: "空"}
 
 
@@ -441,6 +464,10 @@ st.markdown("""
 
 # 让用户选择要进一步分割的子集
 if best_feature_idx_s4 is not None: # 只有在找到第一个分割后才进行
+    # 在分割数据集之后再定义 left_indices_s4 和 right_indices_s4
+    left_indices_s4 = X_simple[:, best_feature_idx_s4] <= best_threshold_s4
+    right_indices_s4 = X_simple[:, best_feature_idx_s4] > best_threshold_s4
+
     subset_choice = st.radio("选择要进一步分析的子集:",
                              (f"左子集 (X{best_feature_idx_s4 + 1} <= {best_threshold_s4:.2f})",
                               f"右子集 (X{best_feature_idx_s4 + 1} > {best_threshold_s4:.2f})"),
@@ -472,7 +499,7 @@ if best_feature_idx_s4 is not None: # 只有在找到第一个分割后才进行
             fig4b, ax4b = plot_data(X_subset, y_subset,
                                     split_feature=best_feature_idx_sub,
                                     split_value=best_threshold_sub,
-                                    title="子集内的最佳分割线")
+                                    title="子集内的最佳分割线") # 中文标题
             st.pyplot(fig4b)
 
         with col4_2b:
@@ -492,8 +519,9 @@ if best_feature_idx_s4 is not None: # 只有在找到第一个分割后才进行
             y_right_sub = y_subset[right_indices_sub]
             gini_left_sub = calculate_gini(y_left_sub)
             gini_right_sub = calculate_gini(y_right_sub)
-            pred_left_sub = np.argmax(np.bincount(y_left_sub)) if len(y_left_sub)>0 else -1
-            pred_right_sub = np.argmax(np.bincount(y_right_sub)) if len(y_right_sub)>0 else -1
+            # 预测基于多数类
+            pred_left_sub = np.argmax(np.bincount(y_left_sub, minlength=global_num_classes)) if len(y_left_sub)>0 else -1
+            pred_right_sub = np.argmax(np.bincount(y_right_sub, minlength=global_num_classes)) if len(y_right_sub)>0 else -1
 
             # 创建新的叶节点
             new_leaf_left_id = new_node_id_base + 'L' # e.g., '1L' or '2L'
@@ -512,18 +540,16 @@ if best_feature_idx_s4 is not None: # 只有在找到第一个分割后才进行
         gini_subset = calculate_gini(y_subset)
         if gini_subset == 0:
             st.info(f"该子集已经**纯净** (Gini = {gini_subset:.3f})，无需再分割，成为叶节点。")
-            # 可以只显示子集数据点，不画分割线
-            fig4b_pure, ax4b_pure = plot_data(X_subset, y_subset, title="纯净的子集")
+            fig4b_pure, ax4b_pure = plot_data(X_subset, y_subset, title="纯净的子集") # 中文标题
             st.pyplot(fig4b_pure)
         elif len(y_subset) <= 1: # 示例：添加一个最小样本数的停止条件
              st.info(f"该子集样本数 ({len(y_subset)}) 过少，停止分割，成为叶节点。")
-             fig4b_small, ax4b_small = plot_data(X_subset, y_subset, title="样本过少的子集")
+             fig4b_small, ax4b_small = plot_data(X_subset, y_subset, title="样本过少的子集") # 中文标题
              st.pyplot(fig4b_small)
         else:
             st.warning(f"在此子集上找不到信息增益大于 0 的有效分割 (当前 Gini = {gini_subset:.3f})。该子集成为叶节点。")
-            fig4b_nosplit, ax4b_nosplit = plot_data(X_subset, y_subset, title="无法有效分割的子集")
+            fig4b_nosplit, ax4b_nosplit = plot_data(X_subset, y_subset, title="无法有效分割的子集") # 中文标题
             st.pyplot(fig4b_nosplit)
-
 
 st.markdown("""
 **理解关键点:**
@@ -532,6 +558,7 @@ st.markdown("""
 *   整个过程的目标是逐步降低不纯度，提高分类的准确性。
 """)
 st.markdown("---")
+
 # --- Stage 5: 过拟合的陷阱与超参数的缰绳 ---
 st.header("Stage 5: 过拟合的陷阱与超参数的缰绳")
 st.markdown("""
@@ -594,8 +621,8 @@ with col5_1_vis:
 
         ax5_overfit.set_xlabel("特征 X1")
         ax5_overfit.set_ylabel("特征 X2")
-        ax5_overfit.set_title("自由生长树的决策边界")
-        ax5_overfit.legend()
+        ax5_overfit.set_title("自由生长树的决策边界") # 中文标题
+        ax5_overfit.legend() # 图例
         ax5_overfit.grid(True, linestyle='--', alpha=0.6)
         st.pyplot(fig5_overfit)
 
@@ -632,7 +659,7 @@ with col5_2_params:
     )
     min_samples_leaf_s5_ctrl = st.slider(
         "叶节点最小样本数 (min_samples_leaf): 叶子节点最少包含的样本数",
-        min_value=1, max_value=len(X_simple)//2, value=1, step=1, key="s5_ctrl_min_leaf", # 最大不超过总样本一半
+        min_value=1, max_value=len(X_simple)//2 if len(X_simple)>1 else 1, value=1, step=1, key="s5_ctrl_min_leaf", # 最大不超过总样本一半
         help="较大的值防止树分得过细，使模型更稳定。"
     )
     # 可选: 增加 criterion 控制
@@ -678,8 +705,8 @@ with col5_2_vis:
 
         ax5_ctrl.set_xlabel("特征 X1")
         ax5_ctrl.set_ylabel("特征 X2")
-        ax5_ctrl.set_title(f"受控树边界 (depth={max_depth_s5_ctrl}, min_leaf={min_samples_leaf_s5_ctrl})")
-        ax5_ctrl.legend()
+        ax5_ctrl.set_title(f"受控树边界 (depth={max_depth_s5_ctrl}, min_leaf={min_samples_leaf_s5_ctrl})") # 中文标题
+        ax5_ctrl.legend() # 图例
         ax5_ctrl.grid(True, linestyle='--', alpha=0.6)
         st.pyplot(fig5_ctrl)
 
@@ -705,20 +732,26 @@ st.markdown("""
 """)
 
 # --- 加载 Iris 数据并创建 DataFrame ---
-iris = load_iris()
-X_iris = iris.data
-y_iris = iris.target
-feature_names_iris = iris.feature_names
-target_names_iris = iris.target_names
-df_iris = pd.DataFrame(data=X_iris, columns=feature_names_iris)
-# 可选: 添加目标列
-# df_iris['target'] = y_iris
-# df_iris['species'] = pd.Categorical.from_codes(y_iris, target_names_iris)
+@st.cache_data # 缓存 Iris 数据加载
+def load_iris_data():
+    iris = load_iris()
+    X_iris = iris.data
+    y_iris = iris.target
+    feature_names_iris = ['花萼长(cm)', '花萼宽(cm)', '花瓣长(cm)', '花瓣宽(cm)'] # 使用中文特征名
+    target_names_iris = iris.target_names # 保持英文类别名 'setosa', 'versicolor', 'virginica'
+    df_iris = pd.DataFrame(data=X_iris, columns=feature_names_iris)
+    # 添加类别名称列（可选，用于显示）
+    target_name_map_iris = {0: 'setosa', 1: 'versicolor', 2: 'virginica'}
+    df_iris['类别名称'] = pd.Categorical.from_codes(y_iris, target_names_iris)
+    return X_iris, y_iris, feature_names_iris, target_names_iris, df_iris
+
+X_iris, y_iris, feature_names_iris, target_names_iris, df_iris = load_iris_data()
+
 
 st.subheader("鸢尾花 (Iris) 数据集回顾")
-st.dataframe(df_iris.head(3)) # 显示少量数据
+st.dataframe(df_iris.head(3)) # 显示少量数据，包含中文特征名
 
-# --- 5.2 超参数控制 (针对 Iris) ---
+# --- 超参数控制 (针对 Iris) ---
 st.subheader("调整超参数并观察 Iris 数据结果")
 
 col6_params, col6_vis = st.columns([1, 3])
@@ -731,6 +764,7 @@ with col6_params:
     criterion_s6 = st.radio("分裂标准 (criterion)", ('gini', 'entropy'), key="s6_criterion")
 
     st.markdown("**选择2D可视化特征:**")
+    # format_func 使用 feature_names_iris (已经是中文)
     x_feature_idx_s6 = st.selectbox("X轴特征", range(len(feature_names_iris)), format_func=lambda i: feature_names_iris[i], index=2, key="s6_x_feature")
     y_feature_idx_s6 = st.selectbox("Y轴特征", range(len(feature_names_iris)), format_func=lambda i: feature_names_iris[i], index=3, key="s6_y_feature")
 
@@ -738,7 +772,7 @@ with col6_params:
         st.warning("请为X轴和Y轴选择不同的特征。")
         st.stop()
 
-# --- 5.3 训练模型与可视化 (针对 Iris) ---
+# --- 训练模型与可视化 (针对 Iris) ---
 with col6_vis:
     # 1. 训练完整模型 (Iris)
     try:
@@ -748,17 +782,19 @@ with col6_vis:
             criterion=criterion_s6,
             random_state=42
         )
-        clf_iris_full_s6.fit(X_iris, y_iris)
+        # 使用包含中文特征名的 DataFrame 训练，避免潜在警告
+        clf_iris_full_s6.fit(df_iris[feature_names_iris], y_iris) # 使用 DataFrame 训练
 
         # 2. 生成树结构图 (Iris)
         st.markdown("**决策树结构图 (基于全部4个特征)**")
         dot_data_iris_s6 = export_graphviz(clf_iris_full_s6, out_file=None,
-                                          feature_names=feature_names_iris,
-                                          class_names=target_names_iris,
+                                          feature_names=feature_names_iris, # 传递中文特征名
+                                          class_names=target_names_iris, # 类别名保持英文
                                           filled=True, rounded=True,
                                           special_characters=True)
         st.graphviz_chart(dot_data_iris_s6)
-        accuracy_iris_s6 = accuracy_score(y_iris, clf_iris_full_s6.predict(X_iris))
+        # 预测时也使用 DataFrame
+        accuracy_iris_s6 = accuracy_score(y_iris, clf_iris_full_s6.predict(df_iris[feature_names_iris]))
         st.caption(f"当前模型在训练集上的准确率: {accuracy_iris_s6:.2%}")
 
     except Exception as e:
@@ -766,17 +802,23 @@ with col6_vis:
 
     # 3. 训练 2D 模型 (Iris)
     try:
+        # 选择对应的两列数据 (仍然是 NumPy 数组)
         X_iris_2d_s6 = X_iris[:, [x_feature_idx_s6, y_feature_idx_s6]]
+        # 获取选择的特征名（中文）
+        selected_feature_names_2d = [feature_names_iris[x_feature_idx_s6], feature_names_iris[y_feature_idx_s6]]
+
         clf_iris_2d_s6 = DecisionTreeClassifier(
             max_depth=max_depth_s6,
             min_samples_leaf=min_samples_leaf_s6,
             criterion=criterion_s6,
             random_state=42
         )
-        clf_iris_2d_s6.fit(X_iris_2d_s6, y_iris)
+        # 训练 2D 模型 (可以用 NumPy 数组，或者用对应的 DataFrame 子集)
+        # clf_iris_2d_s6.fit(X_iris_2d_s6, y_iris)
+        clf_iris_2d_s6.fit(df_iris[selected_feature_names_2d], y_iris) # 用 DataFrame 子集训练更好
 
         # 4. 绘制决策边界 (Iris)
-        st.markdown(f"**决策边界图 (基于 '{feature_names_iris[x_feature_idx_s6]}' 和 '{feature_names_iris[y_feature_idx_s6]}')**")
+        st.markdown(f"**决策边界图 (基于 '{selected_feature_names_2d[0]}' 和 '{selected_feature_names_2d[1]}')**")
         fig6, ax6 = plt.subplots(figsize=(8, 6))
 
         x_min_i, x_max_i = X_iris_2d_s6[:, 0].min() - 0.5, X_iris_2d_s6[:, 0].max() + 0.5
@@ -784,7 +826,9 @@ with col6_vis:
         h_i = 0.02
         xx_i, yy_i = np.meshgrid(np.arange(x_min_i, x_max_i, h_i), np.arange(y_min_i, y_max_i, h_i))
 
-        Z_i = clf_iris_2d_s6.predict(np.c_[xx_i.ravel(), yy_i.ravel()])
+        # 预测网格点时，需要构造包含这两个特征名的 DataFrame
+        mesh_data = pd.DataFrame(np.c_[xx_i.ravel(), yy_i.ravel()], columns=selected_feature_names_2d)
+        Z_i = clf_iris_2d_s6.predict(mesh_data)
         Z_i = Z_i.reshape(xx_i.shape)
 
         cmap_light_i = plt.cm.RdYlBu
@@ -794,11 +838,11 @@ with col6_vis:
         scatter_i = ax6.scatter(X_iris_2d_s6[:, 0], X_iris_2d_s6[:, 1], c=y_iris, cmap=cmap_bold_i,
                                 edgecolor='k', s=40)
 
-        ax6.set_xlabel(feature_names_iris[x_feature_idx_s6])
-        ax6.set_ylabel(feature_names_iris[y_feature_idx_s6])
-        ax6.set_title("Iris 数据集决策边界")
+        ax6.set_xlabel(selected_feature_names_2d[0]) # X轴标签是中文
+        ax6.set_ylabel(selected_feature_names_2d[1]) # Y轴标签是中文
+        ax6.set_title("Iris 数据集决策边界") # 中文标题
         handles_i, _ = scatter_i.legend_elements(prop="colors")
-        ax6.legend(handles_i, target_names_iris, title="类别")
+        ax6.legend(handles_i, target_names_iris, title="类别") # 类别名保持英文
         ax6.grid(True, linestyle='--', alpha=0.6)
         st.pyplot(fig6)
 
@@ -808,7 +852,7 @@ with col6_vis:
 st.markdown("---")
 
 
-# --- Stage 7: 总结与应用 (原 Stage 6) ---
+# --- Stage 7: 总结与应用 ---
 st.header("Stage 7: 总结与应用")
 
 st.markdown("""
